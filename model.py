@@ -95,6 +95,10 @@ def check_accuracy(model,loader):
     print("Got %d/%d correct: %.2f" %(num_correct,num_samples,acc*100))
     return acc
 
+def weight_init(m):
+    if isinstance(m,nn.Conv2d):
+        nn.init.xavier_uniform(m.weight.data,gain=nn.init.calculate_gain('relu'))
+
 
 conv = nn.Sequential(
         nn.Conv2d(3,32,kernel_size=3,stride=1,padding=1), #32x32x32
@@ -111,10 +115,12 @@ loss_fn = nn.CrossEntropyLoss().type(dtype)
 optimizer = optim.Adam(conv.parameters(),lr=1e-2)
 
 
+
 loss_hist = []
 acc_hist = []
 conv.apply(reset)
-train(conv,loss_fn,optimizer,num_epochs = 1)
+conv.apply(weight_init)
+train(conv,loss_fn,optimizer,num_epochs = 20)
 check_accuracy(conv,loader_val)
 
 loss_hist = np.array(loss_hist)
