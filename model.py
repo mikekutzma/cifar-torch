@@ -109,10 +109,11 @@ conv = nn.Sequential(
         nn.MaxPool2d(kernel_size=2,stride=2,padding=0), #32x13x13
         Flatten(),
         nn.Linear(5408,2048),
+        nn.ReLU(),
         nn.Linear(2048,10)
         )
 loss_fn = nn.CrossEntropyLoss().type(dtype)
-optimizer = optim.Adam(conv.parameters(),lr=1e-2)
+optimizer = optim.Adam(conv.parameters(),lr=0.001)
 
 
 
