@@ -22,25 +22,25 @@ class ChunkSampler(sampler.Sampler):
     def __len__(self):
         return self.num_samples
 
-#total training samples = 60000
-#size of samples is 1x28x28
-NUM_TRAIN = 58000
+#total training samples = 50000
+#size of samples is 1x32x32
+NUM_TRAIN = 48000
 NUM_VAL = 2000
 
 batch_size = 64
 
-mnist_train = dset.MNIST('./data',train=True,download=True, transform=T.ToTensor())
-loader_train = DataLoader(mnist_train, batch_size=batch_size, sampler=ChunkSampler(NUM_TRAIN,0))
+cifar_train = dset.CIFAR10('./data',train=True,download=True, transform=T.ToTensor())
+loader_train = DataLoader(cifar_train, batch_size=batch_size, sampler=ChunkSampler(NUM_TRAIN,0))
 
-mnist_val = dset.MNIST('./data',train=True,download=True, transform=T.ToTensor())
-loader_val = DataLoader(mnist_val, batch_size=batch_size, sampler=ChunkSampler(NUM_VAL,NUM_TRAIN))
+cifar_val = dset.CIFAR10('./data',train=True,download=True, transform=T.ToTensor())
+loader_val = DataLoader(cifar_val, batch_size=batch_size, sampler=ChunkSampler(NUM_VAL,NUM_TRAIN))
 
-mnist_test = dset.MNIST('./data',train=False,download=True, transform=T.ToTensor())
-loader_test = DataLoader(mnist_test, batch_size=batch_size)
+cifar_test = dset.CIFAR10('./data',train=False,download=True, transform=T.ToTensor())
+loader_test = DataLoader(cifar_test, batch_size=batch_size)
 
 dtype = torch.FloatTensor #CPU datatype
 
-print_every = 100
+print_every = 20
 
 def reset(m):
     if hasattr(m,'reset_parameters'):
@@ -53,8 +53,9 @@ class Flatten(nn.Module):
 
 
 def train(model,loss_fn,optimizer,num_epochs):
+    it_count = 0
     for epoch in range(num_epochs):
-        acc_hist.append(check_accuracy(model,loader_val))
+        acc_hist.append([it_count,check_accuracy(model,loader_val)])
         print('Starting epoch %d/%d' %(epoch+1,num_epochs))
         model.train()
         for t, (x,y) in enumerate(loader_train):
@@ -64,7 +65,7 @@ def train(model,loss_fn,optimizer,num_epochs):
             scores = model(x_var)
 
             loss = loss_fn(scores,y_var)
-            loss_hist.append(loss.data[0])
+            loss_hist.append([it_count,loss.data[0]])
             if((t+1)%print_every == 0):
                 print('%d, loss = %.4f' % (t+1,loss.data[0]))
 
@@ -73,6 +74,7 @@ def train(model,loss_fn,optimizer,num_epochs):
             loss.backward()
 
             optimizer.step()
+            it_count += 1
 
 def check_accuracy(model,loader):
     if loader.dataset.train:
@@ -94,25 +96,29 @@ def check_accuracy(model,loader):
     return acc
 
 
-simple_nn = nn.Sequential(
+conv = nn.Sequential(
+        nn.Conv2d(3,32,kernel_size=3,stride=1,padding=1), #32x32x32
+        nn.ReLU(),
+        nn.BatchNorm2d(32),
+        nn.Conv2d(32,32,kernel_size=7,stride=1,padding=0), #32x26x26
+        nn.ReLU(),
+        nn.MaxPool2d(kernel_size=2,stride=2,padding=0), #32x13x13
         Flatten(),
-        nn.Linear(784,500),
-        nn.ReLU(),
-        nn.BatchNorm1d(500),
-        nn.Linear(500,784),
-        nn.ReLU(),
-        nn.BatchNorm1d(784),
-        nn.Linear(784,10)
+        nn.Linear(5408,2048),
+        nn.Linear(2048,10)
         )
 loss_fn = nn.CrossEntropyLoss().type(dtype)
-optimizer = optim.Adam(simple_nn.parameters(),lr=1e-2)
+optimizer = optim.Adam(conv.parameters(),lr=1e-2)
 
 
 loss_hist = []
 acc_hist = []
-simple_nn.apply(reset)
-train(simple_nn,loss_fn,optimizer,num_epochs = 10)
-check_accuracy(simple_nn,loader_val)
+conv.apply(reset)
+train(conv,loss_fn,optimizer,num_epochs = 1)
+check_accuracy(conv,loader_val)
 
-plt.plot(loss_hist,'b-',acc_hist,'r-')
+loss_hist = np.array(loss_hist)
+acc_hist = np.array(acc_hist)
+
+plt.plot(loss_hist[:,0],loss_hist[:,1],'b-',acc_hist[:,0],acc_hist[:,1],'r-')
 plt.show()
