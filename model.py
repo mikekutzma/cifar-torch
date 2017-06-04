@@ -52,12 +52,12 @@ class Flatten(nn.Module):
         return x.view(N,-1)
 
 
-def train(model,loss_fn,optimizer,num_epochs):
+def train(model,loss_fn,opt,num_epochs,decay_rate,lr,acc_track=False):
     it_count = 0
     for epoch in range(num_epochs):
-        acc_hist.append([it_count,check_accuracy(model,loader_val)])
-        print('Starting epoch %d/%d' %(epoch+1,num_epochs))
+        optimizer = opt(model.parameters(),lr=(lr*(0.3**epoch)))
         model.train()
+        print('Starting epoch %d/%d' %(epoch+1,num_epochs))
         for t, (x,y) in enumerate(loader_train):
             x_var = Variable(x.type(dtype))
             y_var = Variable(y.type(dtype).long())
@@ -67,6 +67,9 @@ def train(model,loss_fn,optimizer,num_epochs):
             loss = loss_fn(scores,y_var)
             loss_hist.append([it_count,loss.data[0]])
             if((t+1)%print_every == 0):
+                if acc_track:
+                    acc_hist.append([it_count,check_accuracy(model,loader_val,loss_fn)[1]])
+                    model.train()
                 print('%d, loss = %.4f' % (t+1,loss.data[0]))
 
             optimizer.zero_grad()
@@ -76,7 +79,7 @@ def train(model,loss_fn,optimizer,num_epochs):
             optimizer.step()
             it_count += 1
 
-def check_accuracy(model,loader):
+def check_accuracy(model,loader,loss_fn):
     if loader.dataset.train:
         print("Checking accuracy on validation set...")
     else:
@@ -86,14 +89,15 @@ def check_accuracy(model,loader):
     model.eval() # put model into evaluation mode
     for x,y in loader:
         x_var = Variable(x.type(dtype), volatile=True)
-
+        y_var = Variable(y.type(dtype).long())
         scores = model(x_var)
+        loss = loss_fn(scores,y_var)
         _, preds = scores.data.cpu().max(1)
         num_correct += (preds==y).sum()
         num_samples += preds.size(0)
     acc = float(num_correct)/num_samples
     print("Got %d/%d correct: %.2f" %(num_correct,num_samples,acc*100))
-    return acc
+    return [acc,loss.data.numpy()[0]]
 
 def weight_init(m):
     if isinstance(m,nn.Conv2d):
@@ -101,19 +105,23 @@ def weight_init(m):
 
 
 conv = nn.Sequential(
-        nn.Conv2d(3,32,kernel_size=3,stride=1,padding=1), #32x32x32
+        nn.Conv2d(3,16,kernel_size=3,stride=1,padding=1), #16x32x32
         nn.ReLU(),
+        nn.BatchNorm2d(16),
+        nn.Conv2d(16,32,kernel_size=3,stride=1,padding=1), #32x32x32
+        nn.ReLU(),
+        nn.MaxPool2d(kernel_size=2,stride=2,padding=0), #32x16x16
         nn.BatchNorm2d(32),
-        nn.Conv2d(32,32,kernel_size=7,stride=1,padding=0), #32x26x26
+        nn.Conv2d(32,64,kernel_size=5,stride=1,padding=0), #64x12x12
         nn.ReLU(),
-        nn.MaxPool2d(kernel_size=2,stride=2,padding=0), #32x13x13
+        nn.MaxPool2d(kernel_size=2,stride=2,padding=0), #64x6x6
         Flatten(),
-        nn.Linear(5408,2048),
+        nn.Linear(2304,1024),
         nn.ReLU(),
-        nn.Linear(2048,10)
+        nn.Linear(1024,10)
         )
 loss_fn = nn.CrossEntropyLoss().type(dtype)
-optimizer = optim.Adam(conv.parameters(),lr=0.001)
+opt = optim.Adam
 
 
 
@@ -121,8 +129,8 @@ loss_hist = []
 acc_hist = []
 conv.apply(reset)
 conv.apply(weight_init)
-train(conv,loss_fn,optimizer,num_epochs = 20)
-check_accuracy(conv,loader_val)
+train(conv,loss_fn,opt,num_epochs = 5,decay_rate=0.3,lr=0.001,acc_track=False)
+check_accuracy(conv,loader_val,loss_fn)
 
 loss_hist = np.array(loss_hist)
 acc_hist = np.array(acc_hist)
